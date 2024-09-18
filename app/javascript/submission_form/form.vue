@@ -231,6 +231,7 @@
                     </span>
                   </label>
                 </div>
+                <button @click="uncheckAll(currentField)">Uncheck all</button>
               </div>
             </div>
           </div>
@@ -924,7 +925,7 @@ export default {
   },
   methods: {
     t (key) {
-      return this.i18n[key] || i18n[this.language?.toLowerCase()]?.[key] || i18n[this.browserLanguage]?.[key] || i18n.en[key] || key
+      return this.i18n[key] || i18n[this.language?.toLowerCase()]?.[key] || i18n[this.browserLanguage]?.[key] || i18n.pt[key] || key
     },
     onOrientationChange (event) {
       this.orientation = event.target.type
@@ -966,6 +967,9 @@ export default {
       } else {
         return `${this.t('option')} ${index + 1}`
       }
+    },
+    uncheckAll(currentField) {
+      return currentField.options.map( ({value}) => value = null)
     },
     maybeTrackEmailClick () {
       const { queryParams } = this
