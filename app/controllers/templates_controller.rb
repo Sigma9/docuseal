@@ -21,7 +21,7 @@ class TemplatesController < ApplicationController
   end
 
   def new
-    @template.name = "#{@base_template.name} (Clone)" if @base_template
+    @template.name = "#{@base_template.name} (#{I18n.t('clone')})" if @base_template
   end
 
   def edit
@@ -87,11 +87,11 @@ class TemplatesController < ApplicationController
       if params[:permanently].present?
         @template.destroy!
 
-        'Template has been removed.'
+        I18n.t('template_has_been_removed')
       else
         @template.update!(archived_at: Time.current)
 
-        'Template has been archived.'
+        I18n.t('template_has_been_archived')
       end
 
     redirect_back(fallback_location: root_path, notice:)
@@ -103,7 +103,7 @@ class TemplatesController < ApplicationController
     params.require(:template).permit(
       :name,
       { schema: [%i[attachment_uuid name]],
-        submitters: [%i[name uuid is_requester linked_to_uuid email]],
+        submitters: [%i[name uuid is_requester linked_to_uuid invite_by_uuid email]],
         fields: [[:uuid, :submitter_uuid, :name, :type,
                   :required, :readonly, :default_value,
                   :title, :description,
@@ -123,7 +123,7 @@ class TemplatesController < ApplicationController
     if template.account == current_account
       redirect_to(edit_template_path(@template))
     else
-      redirect_back(fallback_location: root_path, notice: 'Template has been cloned')
+      redirect_back(fallback_location: root_path, notice: I18n.t('template_has_been_cloned'))
     end
   end
 

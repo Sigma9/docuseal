@@ -38,8 +38,11 @@
     <template v-else-if="alwaysMinimize">
       {{ t('next') }}
     </template>
+    <template v-else-if="isShowContinue">
+      {{ t('continue') }}
+    </template>
     <template v-else>
-      {{ t('submit_form') }}
+      {{ t('start_now') }}
     </template>
     <IconArrowsDiagonal
       class="absolute right-0 mr-4"
@@ -59,7 +62,7 @@
       id="minimize_form_button"
       class="absolute right-0 mr-2 mt-2 top-0 hidden md:block"
       :title="t('minimize')"
-      @click.prevent="isFormVisible = false"
+      @click.prevent="minimizeForm"
     >
       <IconArrowsDiagonalMinimize2
         :width="20"
@@ -70,7 +73,7 @@
       :class="{ 'md:px-4': isBreakpointMd }"
     >
       <form
-        v-if="!isCompleted"
+        v-if="!isCompleted && !isInvite"
         ref="form"
         :action="submitPath"
         method="post"
@@ -201,7 +204,7 @@
                 <span
                   @click="scrollIntoField(currentField)"
                 >
-                  {{ t('complete_hightlighted_checkboxes_and_click') }} <span class="font-semibold">{{ stepFields.length === currentStep + 1 ? t('submit') : t('next') }}</span>.
+                  {{ t('complete_hightlighted_checkboxes_and_click') }} <span class="font-semibold">{{ submitButtonText }}</span>.
                 </span>
               </div>
               <div
@@ -265,7 +268,7 @@
               >
                 <template v-if="isAnonymousChecboxes || !showFieldNames">
                   <span class="text-xl">
-                    {{ t('complete_hightlighted_checkboxes_and_click') }} <span class="font-semibold">{{ stepFields.length === currentStep + 1 ? t('submit') : t('next') }}</span>.
+                    {{ t('complete_hightlighted_checkboxes_and_click') }} <span class="font-semibold">{{ submitButtonText }}</span>.
                   </span>
                   <input
                     v-for="field in currentStepFields"
@@ -340,7 +343,7 @@
             :remember-signature="rememberSignature"
             :attachments-index="attachmentsIndex"
             :require-signing-reason="requireSigningReason"
-            :button-text="buttonText"
+            :button-text="submitButtonText"
             :dry-run="dryRun"
             :with-disclosure="withDisclosure"
             :with-qr-button="withQrButton"
@@ -349,7 +352,7 @@
             @update:reason="values[currentField.preferences?.reason_field_uuid] = $event"
             @attached="attachments.push($event)"
             @start="scrollIntoField(currentField)"
-            @minimize="isFormVisible = false"
+            @minimize="minimizeForm"
           />
           <InitialsStep
             v-else-if="currentField.type === 'initials'"
@@ -365,7 +368,7 @@
             @attached="attachments.push($event)"
             @start="scrollIntoField(currentField)"
             @focus="scrollIntoField(currentField)"
-            @minimize="isFormVisible = false"
+            @minimize="minimizeForm"
           />
           <AttachmentStep
             v-else-if="currentField.type === 'file'"
@@ -421,7 +424,7 @@
                 class="mr-1 animate-spin"
               />
               <span>
-                {{ buttonText }}
+                {{ submitButtonText }}
               </span><span
                 v-if="isSubmitting"
                 class="w-6 flex justify-start mr-1"
@@ -436,10 +439,21 @@
           </div>
         </div>
       </form>
+      <InviteForm
+        v-else-if="isInvite"
+        :submitters="inviteSubmitters"
+        :submitter-slug="submitterSlug"
+        :authenticity-token="authenticityToken"
+        :url="baseUrl + submitPath + '/invite'"
+        :style="{ maxWidth: isBreakpointMd ? '582px' : '' }"
+        @success="[isInvite = false, performComplete($event)]"
+      />
       <FormCompleted
         v-else
         :is-demo="isDemo"
         :attribution="attribution"
+        :has-signature-fields="stepFields.some((fields) => fields.some((f) => ['signature', 'initials'].includes(f.type)))"
+        :has-multiple-documents="hasMultipleDocuments"
         :completed-button="completedRedirectUrl ? {} : completedButton"
         :completed-message="completedRedirectUrl ? {} : completedMessage"
         :with-send-copy-button="withSendCopyButton && !completedRedirectUrl"
@@ -485,6 +499,7 @@ import TextStep from './text_step'
 import NumberStep from './number_step'
 import DateStep from './date_step'
 import MarkdownContent from './markdown_content'
+import InviteForm from './invite_form'
 import FormCompleted from './completed'
 import { IconInnerShadowTop, IconArrowsDiagonal, IconWritingSign, IconArrowsDiagonalMinimize2 } from '@tabler/icons-vue'
 import AppearsOn from './appears_on'
@@ -522,6 +537,7 @@ export default {
     IconWritingSign,
     AttachmentStep,
     InitialsStep,
+    InviteForm,
     MultiSelectStep,
     IconInnerShadowTop,
     DateStep,
@@ -547,6 +563,11 @@ export default {
     submitter: {
       type: Object,
       required: true
+    },
+    inviteSubmitters: {
+      type: Array,
+      required: false,
+      default: () => []
     },
     withSignatureId: {
       type: Boolean,
@@ -739,9 +760,11 @@ export default {
   data () {
     return {
       isCompleted: false,
+      isInvite: false,
       isFormVisible: this.expand !== false,
       showFillAllRequiredFields: false,
       currentStep: 0,
+      isShowContinue: false,
       enableScrollIntoField: true,
       phoneVerifiedValues: {},
       orientation: screen?.orientation?.type,
@@ -754,15 +777,33 @@ export default {
     isMobile () {
       return /android|iphone|ipad/i.test(navigator.userAgent)
     },
-    buttonText () {
-      if (this.alwaysMinimize || this.stepFields.length === this.currentStep + 1) {
+    submitButtonText () {
+      if (this.alwaysMinimize) {
         return this.t('submit')
+      } else if (this.stepFields.length === this.currentStep + 1) {
+        if (this.currentField.type === 'signature') {
+          return this.t('sign_and_complete')
+        } else {
+          return this.t('complete')
+        }
       } else {
         return this.t('next')
       }
     },
     alwaysMinimize () {
       return this.minimize || (this.orientation?.includes('landscape') && this.isMobile && parseInt(window.innerHeight) < 550)
+    },
+    hasMultipleDocuments () {
+      return Object.keys(
+        this.stepFields.reduce((acc, fields) => {
+          fields.forEach((f) => {
+            f.areas?.forEach((a) => {
+              acc[a.attachment_uuid] = 1
+            })
+          })
+          return acc
+        }, {})
+      ).filter(Boolean).length > 1
     },
     currentStepFields () {
       return this.stepFields[this.currentStep] || []
@@ -888,11 +929,11 @@ export default {
     }
 
     if (document.body?.clientWidth >= 768 && this.expand !== true && ['signature', 'initials', 'file', 'image'].includes(this.currentField?.type)) {
-      this.isFormVisible = false
+      this.minimizeForm()
     }
 
     if (this.alwaysMinimize) {
-      this.isFormVisible = false
+      this.minimizeForm()
     }
 
     if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
@@ -1119,7 +1160,7 @@ export default {
         const formData = new FormData(this.$refs.form)
         const isLastStep = this.currentStep === this.stepFields.length - 1
 
-        if (isLastStep && !emptyRequiredField) {
+        if (isLastStep && !emptyRequiredField && !this.inviteSubmitters.length) {
           formData.append('completed', 'true')
         }
 
@@ -1150,7 +1191,7 @@ export default {
 
           if (nextStep) {
             if (this.alwaysMinimize) {
-              this.isFormVisible = false
+              this.minimizeForm()
             }
 
             this.goToStep(this.stepFields.indexOf(nextStep), this.autoscrollFields)
@@ -1158,18 +1199,10 @@ export default {
             if (emptyRequiredField === nextStep) {
               this.showFillAllRequiredFields = true
             }
+          } else if (this.inviteSubmitters.length) {
+            this.isInvite = true
           } else {
-            this.isCompleted = true
-
-            const respData = await response.text()
-
-            if (respData) {
-              this.onComplete(JSON.parse(respData))
-            }
-
-            if (this.completedRedirectUrl) {
-              window.location.href = this.completedRedirectUrl
-            }
+            this.performComplete(response)
           }
         }).catch(error => {
           console.error(error)
@@ -1185,6 +1218,25 @@ export default {
       }).finally(() => {
         this.isSubmitting = false
       })
+    },
+    minimizeForm () {
+      this.isFormVisible = false
+      this.isShowContinue = true
+    },
+    async performComplete (resp) {
+      this.isCompleted = true
+
+      if (resp?.text) {
+        const respData = await resp.text()
+
+        if (respData) {
+          this.onComplete(JSON.parse(respData))
+        }
+      }
+
+      if (this.completedRedirectUrl) {
+        window.location.href = this.completedRedirectUrl
+      }
     }
   }
 }
