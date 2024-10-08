@@ -1,5 +1,6 @@
 <template>
   <div
+    id="form_completed"
     class="mx-auto max-w-md flex flex-col"
     dir="auto"
   >
@@ -222,7 +223,7 @@ export default {
             this.downloadUrls(urls)
           }
         } else {
-          alert('Failed to download files')
+          alert(this.t('failed_to_download_files'))
         }
       })
     },
